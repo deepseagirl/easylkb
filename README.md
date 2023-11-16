@@ -11,6 +11,14 @@ easylkb is best run on a bare metal Linux system. You need the following things 
 - gcc
 - make
 - qemu
+- debootstrap
+
+Install all prerequisites on Debian/Ubuntu
+
+```
+sudo apt update
+sudo apt install make gcc flex bison libncurses-dev libelf-dev libssl-dev debootstrap
+```
 
 You can clone this repo and run from the easylkb directory, or you can install with pip (not yet lol). 
 

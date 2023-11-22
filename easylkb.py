@@ -1,12 +1,10 @@
+#!/usr/bin/env python3
+
 import argparse
 import subprocess
 import re
 import os
 import sys
-import select
-import termios
-import tty
-import pty
 
 class Kbuilder:
     def __init__(self, KConfig=None, KPath=None, KVersion="", KHostname="localhost"):
@@ -27,7 +25,7 @@ class Kbuilder:
         self.isExtracted = False # Is the tarball extracted?
         self.nproc = int(subprocess.run(["nproc"], capture_output=True).stdout.decode("utf-8").split("\n")[0])
         self.runkPath = self.ImgPath + "runk.sh"
-        self.runkScript =  "#!/bin/bash\n"
+        self.runkScript =  "#!/usr/bin/env bash\n"
         self.runkScript += f"qemu-system-x86_64"
         self.runkScript += f" -m 2G"
         self.runkScript += f" -smp 2"
@@ -46,6 +44,9 @@ class Kbuilder:
     def logb(self, msgType, inMsg, quiet=False):
         endFmt = "\x1b[0m"
         startFmt = ""
+        col1 = ""
+        col2 = ""
+        logChar = ""
         if msgType == "fail":
             col1 = "\x1b[38;5;124m"
             col2 = "\x1b[38;5;197m"
@@ -91,10 +92,11 @@ class Kbuilder:
                                 stderr=subprocess.PIPE)
                 err = ''
                 while subproc.poll() is None:
-                    line = subproc.stderr.readline().decode('utf-8')
-                    err += line
-                    sys.stderr.write(line)
-                    sys.stderr.flush()
+                    if subproc.stderr is not None:
+                        line = subproc.stderr.readline().decode('utf-8')
+                        err += line
+                        sys.stderr.write(line)
+                        sys.stderr.flush()
 
                 exitcode = subproc.poll()
                 return exitcode
@@ -170,6 +172,8 @@ class Kbuilder:
         runkScript = open(self.runkPath, "w")
         runkScript.write(self.runkScript)
         runkScript.close()
+        # make executable
+        os.chmod(self.runkPath, 0o777)
         self.logb("good", f"runk.sh written to {self.runkPath}.")
         # Also need to print ssh config entry for it
     def DebImageRun(self):
@@ -197,7 +201,7 @@ if __name__ == '__main__':
 
     myKVersion = args.KVersion
     myKPath = args.KPath
-    myKConfig = args.KConfig 
+    myKConfig = args.KConfig
     Kb = Kbuilder(KVersion=myKVersion, KPath=myKPath, KConfig=myKConfig)
 
     if args.DoAll:

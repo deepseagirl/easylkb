@@ -2,6 +2,10 @@
 
 easylkb is a simple script designed to make Linux Kernel Debugging easier and more accessible.
 
+this project was originally released in tmp.0ut volume 3: https://tmpout.sh/3/20.html
+
+this article is a good introduction to this tool: https://hackaday.com/2023/11/22/linux-fu-easy-kernel-debugging/
+
 ## How do you install easylkb?
 
 easylkb is best run on a bare metal Linux system. You need the following things installed in order to use it:

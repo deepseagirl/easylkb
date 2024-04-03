@@ -121,3 +121,11 @@ Wow! You're debugging the kernel you just built, pretty neat.
 
 For more info on kernel debugging with gdb:
 - https://docs.kernel.org/dev-tools/gdb-kernel-debugging.html
+
+## Known Issues
+
+because this is a generic tool, there may be some instances where the example kernel config doesn't work for your kernel version.
+
+here are some documented fixes:
+- https://github.com/deepseagirl/easylkb/issues/4 Add `DEBUG_INFO_DWARF5` to config for kernel version 6.8 or newer
+

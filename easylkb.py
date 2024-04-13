@@ -160,6 +160,7 @@ class Kbuilder:
     def KCompile(self):
         self.logb("warn","Warning: Building the kernel, this may take a while...")
         cmdret = self.run(["make", "-j", f"{self.nproc}"], rcwd=self.KPath)
+        cmdret = self.run(["make", "scripts_gdb"], rcwd=self.KPath)
     def DebImageBuild(self):
         self.logb("log", f"Building Debian Image - Version: {self.KVersion} Hostname: {self.KHostname}")
         try:

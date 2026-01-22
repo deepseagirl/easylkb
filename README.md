@@ -55,6 +55,10 @@ To build a Debian (i)mage from this kernel
 easylkb -k 6.2 -i
 ```
 
+(If you are trying to use a kernel earlier than around 3.6, please use the
+`--alt` flag as the debbootstrap rootfs doesn't support kernels as old as this,
+and make sure you have previously ran `./scripts/setup.sh`)
+
 To (r)un the generated image:
 ```
 easylkb -k 6.2 -r
@@ -67,13 +71,24 @@ easylkb -k 6.2 -a
 
 When it's running, it will run qemu with the Debian image and expose ssh and GDB debugging features accessible via localhost.
 
+If you are unable to build a kernel due to toolchain issues, there are Docker
+containers that you can use setup with `./scripts/setup.sh`, and use like:
+```
+easylkb -k 4.19 -dcm --container easylkb-1804buildenv
+```
+
 ## How Do I Interact With The Image?
 
 The image, keys, and run script are stored in the img/ directory within the kernel source.
 
 You can ssh into your image like so:
 ```
-ssh root@localhost -p 10021 -i ~/kernel/linux-6.2/img/bullseye.id_rsa
+ssh root@localhost -p 10021 -i ~/kernel/linux-6.2/img/rootfs.id_rsa
+```
+
+Or with the `ssh-kernel.sh` script:
+```
+./scripts/ssh-kernel.sh 6.2
 ```
 
 The default login for the resulting image is the user "root" with no password.
@@ -84,7 +99,7 @@ Host linux62
   HostName localhost
   User root
   Port 10021
-  IdentityFile ~/kernel/linux-6.2/img/bullseye.id_rsa
+  IdentityFile ~/kernel/linux-6.2/img/rootfs.id_rsa
   StrictHostKeyChecking no
 ```
 

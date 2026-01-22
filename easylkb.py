@@ -6,8 +6,31 @@ import re
 import os
 import sys
 
+
+def url_for_kernel(full_ver):
+    version = list(map(int, full_ver.split('.')))
+    major = version[0]
+    minor = version[1]
+
+    if major in [1, 2]:
+        return f"https://cdn.kernel.org/pub/linux/kernel/v{major}.{minor}/linux-{full_ver}.tar.xz"
+    elif major in [3, 4, 5, 6]:
+        return f"https://cdn.kernel.org/pub/linux/kernel/v{major}.x/linux-{full_ver}.tar.xz"
+
+    return None
+
+def wrap_container(container, rcwd, cmd):
+    cwd = os.path.abspath(rcwd)
+    return ['docker', 'run', '--rm',
+            '-v', f'{cwd}:/build',
+            '-u', f'{os.getuid()}:{os.getgid()}',
+            '-ti',
+            container
+        ] + cmd
+
+
 class Kbuilder:
-    def __init__(self, KConfig=None, KPath=None, KVersion="", KHostname="localhost"):
+    def __init__(self, KConfig=None, KPath=None, KVersion="", KHostname="localhost", KContainer=None, KAltRootfs=False):
         self.BaseDir = os.getcwd() + "/"
         self.LogDir = self.BaseDir + "log/"
         self.KVersion = KVersion # The kernel version
@@ -19,6 +42,8 @@ class Kbuilder:
             self.KPath = KPath
         else:
             self.KPath = f"{self.BaseDir}kernel/linux-{KVersion}/" # Path to this kernel
+        self.KContainer = KContainer
+        self.useAltRootfs = KAltRootfs
         self.ImgPath = self.KPath + "img/"
         self.KHostname = KHostname
         self.isDownloaded = False # Is the tarball downloaded?
@@ -31,7 +56,7 @@ class Kbuilder:
         self.runkScript += f" -smp 2"
         self.runkScript += f" -kernel {self.KPath}/arch/x86/boot/bzImage"
         self.runkScript += f" -append \"console=ttyS0 root=/dev/sda earlyprintk=serial net.ifnames=0 nokaslr\""
-        self.runkScript += f" -drive file={self.ImgPath}bullseye.img,format=raw"
+        self.runkScript += f" -drive file={self.ImgPath}rootfs.img,format=raw"
         self.runkScript += f" -net user,host=10.0.2.10,hostfwd=tcp:127.0.0.1:10021-:22"
         self.runkScript += f" -net nic,model=e1000"
         self.runkScript += f" -nographic"
@@ -76,7 +101,7 @@ class Kbuilder:
         if quiet == False:
             print(outmsg)
         return outmsg
-    def run(self, cmd, rcwd=None):
+    def run(self, cmd, rcwd=None, container=None):
         # This is a wrapper around subprocess.Popen that follows the output
         # cmd  = A list containing the command to run
         # rcwd = current working dir for this command
@@ -84,71 +109,76 @@ class Kbuilder:
         retcode = -1
         if rcwd == None:
             rcwd = self.BaseDir
-        if cmd is not None:
-            try:
-                self.logb("log", f"Executing {cmd}")
-                subproc = subprocess.Popen(cmd,
-                                cwd=rcwd,
-                                stderr=subprocess.PIPE)
-                err = ''
-                while subproc.poll() is None:
-                    if subproc.stderr is not None:
-                        line = subproc.stderr.readline().decode('utf-8')
-                        err += line
-                        sys.stderr.write(line)
-                        sys.stderr.flush()
 
-                exitcode = subproc.poll()
-                return exitcode
-            except Exception as e:
-                print("[!] Error!")
-                print(e)
-                return retcode
+        if cmd is None:
+            return retcode
+
+        real_cmd = cmd
+        if container:
+            real_cmd = wrap_container(container, rcwd, cmd)
+
+        try:
+            self.logb("log", f"Executing {real_cmd}")
+            subproc = subprocess.Popen(real_cmd,
+                            cwd=rcwd,
+                            stderr=subprocess.PIPE)
+            err = ''
+            while subproc.poll() is None:
+                if subproc.stderr is not None:
+                    line = subproc.stderr.readline().decode('utf-8')
+                    err += line
+                    sys.stderr.write(line)
+                    sys.stderr.flush()
+
+            exitcode = subproc.poll()
+            return exitcode
+        except Exception as e:
+            print("[!] Error!")
+            print(e)
+
     def KDownload(self):
-        if self.KVersion: # This means we're downloading a mainline kernel
-            version_checker = r"^([3-6])\.\d+(?:\.\d+)?$" # support major versions 3,4,5,6
-            version = re.match(version_checker, self.KVersion)
-            if not version:
-                self.logb("fail","Invalid or unsupported kernel version!")
-                return
-            major_ver = version.group(1)
-            full_ver = version.group(0)
-            tarball_url = f"https://cdn.kernel.org/pub/linux/kernel/v{major_ver}.x/linux-{full_ver}.tar.xz"
-            file_name = f"linux-{full_ver}"
-            cwd = os.getcwd()
-            download_path = f"{cwd}/kernel/" # TODO: Grab this from the class instead!!
-            archive_name = f"{file_name}.tar.xz"
-            extracted_path = download_path + file_name # This is where the kernel source is extracted, kernel/linux-version/
-            archive_path = download_path + archive_name
-
-            if os.path.isfile(archive_path):
-                confirm_overwrite = self.logb("warn", f"Warning - already downloaded archive for version {full_ver}. Overwrite? [y/n] (Default=n)", quiet=True)
-                archiveOverwrite = input(f"{confirm_overwrite} ")
-                self.isDownloaded = False if archiveOverwrite.lower() == "y" else True # Trigger redownload
-            # try to download tarball for target kernel version
-            if self.isDownloaded == False:
-                self.logb("good",f"Downloading {tarball_url} to {archive_path}")
-                dlcmd = self.run(["curl", "-s", "--fail", tarball_url, "-o", archive_path])
-                if dlcmd != 0:
-                    self.logb("warn", f"Warning - attempt to download archive for kernel version {full_ver} was unsuccessful. plz check your version")
-                    self.isDownloaded = False
-                    return
-                else:
-                    self.isDownloaded = True
-            if os.path.isdir(extracted_path):
-                self.logb("warn", f"Warning - extracted directory already exists for version {full_ver}.")
-                self.isExtracted = True
-            if self.isExtracted == False:
-                self.logb("good", f"Extracting the tarball for {self.KVersion}")
-                self.run(["tar", "xf", archive_path, "-C", download_path])
-                if not os.path.isdir(extracted_path): # Check if extracted files are where we expect
-                    self.logb("warn", f"Warning - tarball downloaded to {archive_path}, but archive extraction was unsuccessful")
-        else:
+        if not self.KVersion:
             self.logb("warn", f"You must set self.KVersion before using KDownload().")
+            return
+        # This means we're downloading a mainline kernel
+        full_ver = self.KVersion
+        tarball_url = url_for_kernel(full_ver)
+        if tarball_url is None:
+            self.logb("fail","Invalid or unsupported kernel version!")
+            return
+        file_name = f"linux-{full_ver}"
+        cwd = os.getcwd()
+        download_path = f"{cwd}/kernel/" # TODO: Grab this from the class instead!!
+        archive_name = f"{file_name}.tar.xz"
+        extracted_path = download_path + file_name # This is where the kernel source is extracted, kernel/linux-version/
+        archive_path = download_path + archive_name
+        if os.path.isfile(archive_path):
+            confirm_overwrite = self.logb("warn", f"Warning - already downloaded archive for version {full_ver}. Overwrite? [y/n] (Default=n)", quiet=True)
+            archiveOverwrite = input(f"{confirm_overwrite} ")
+            self.isDownloaded = False if archiveOverwrite.lower() == "y" else True # Trigger redownload
+        # try to download tarball for target kernel version
+        if self.isDownloaded == False:
+            self.logb("good",f"Downloading {tarball_url} to {archive_path}")
+            dlcmd = self.run(["curl", "-s", "--fail", tarball_url, "-o", archive_path])
+            if dlcmd != 0:
+                self.logb("warn", f"Warning - attempt to download archive for kernel version {full_ver} was unsuccessful. plz check your version")
+                self.isDownloaded = False
+                return
+            else:
+                self.isDownloaded = True
+        if os.path.isdir(extracted_path):
+            self.logb("warn", f"Warning - extracted directory already exists for version {full_ver}.")
+            self.isExtracted = True
+        if self.isExtracted == False:
+            self.logb("good", f"Extracting the tarball for {self.KVersion}")
+            self.run(["tar", "xf", archive_path, "-C", download_path])
+            if not os.path.isdir(extracted_path): # Check if extracted files are where we expect
+                self.logb("warn", f"Warning - tarball downloaded to {archive_path}, but archive extraction was unsuccessful")
     def KConfigure(self):
-        cmdret = self.run(["make", "defconfig"], rcwd=self.KPath)
-        cmdret = self.run(["make", "kvm_guest.config"], rcwd=self.KPath)
-
+        cmdret = self.run(["make", "defconfig"], rcwd=self.KPath,
+                          container=self.KContainer)
+        cmdret = self.run(["make", "kvm_guest.config"], rcwd=self.KPath,
+                          container=self.KContainer)
         self.logb("log",f"Appending {self.KConfig} to {self.KPath}.config")
         KConfigFile = open(self.KConfig, "r")
         ConfigFile = open(f"{self.KPath}.config", "a+") # This is the config file to write
@@ -156,10 +186,12 @@ class Kbuilder:
         ConfigFile.close()
         KConfigFile.close()
 
-        cmdret = self.run(["make", "olddefconfig"], rcwd=self.KPath)
+        cmdret = self.run(["make", "olddefconfig"], rcwd=self.KPath,
+                          container=self.KContainer)
     def KCompile(self):
         self.logb("warn","Warning: Building the kernel, this may take a while...")
-        cmdret = self.run(["make", "-j", f"{self.nproc}"], rcwd=self.KPath)
+        cmdret = self.run(["make", "-j", f"{self.nproc}"], rcwd=self.KPath,
+                          container=self.KContainer)
     def DebImageBuild(self):
         self.logb("log", f"Building Debian Image - Version: {self.KVersion} Hostname: {self.KHostname}")
         try:
@@ -167,8 +199,14 @@ class Kbuilder:
             os.mkdir(self.ImgPath) # this should create the dir, needs testing
         except FileExistsError:
             self.logb("warn", f"Dir exists, skipping...")
-        cmdret = self.run(["cp", f"{self.BaseDir}kernel/create-image.sh", self.ImgPath])
-        cmdret = self.run([f"{self.ImgPath}create-image.sh","-n", self.KHostname], rcwd=self.ImgPath)
+        if not self.useAltRootfs:
+            cmdret = self.run(["cp", f"{self.BaseDir}scripts/create-image.sh", self.ImgPath])
+            cmdret = self.run([f"{self.ImgPath}create-image.sh","-n", self.KHostname], rcwd=self.ImgPath)
+        else:
+            cmdret = self.run(["cp", f"{self.BaseDir}scripts/create-image-alt.sh", self.ImgPath])
+            cmdret = self.run(["cp", f"{self.BaseDir}kernel/dropbearmulti", self.ImgPath])
+            # Script does not yet support custom hostnames
+            cmdret = self.run([f"{self.ImgPath}create-image-alt.sh","-n", self.KHostname], rcwd=self.ImgPath)
         runkScript = open(self.runkPath, "w")
         runkScript.write(self.runkScript)
         runkScript.close()
@@ -193,6 +231,8 @@ if __name__ == '__main__':
     parser.add_argument('-i', dest='DebImageBuild', action="store_true", help='Builds bootable Debian image from a built kernel')
     parser.add_argument('-r', dest='DebImageRun', action="store_true", help='Run image with QEMU')
     parser.add_argument('-a', dest='DoAll', action="store_true", help='Do All: Download (or use source specified by -p), Configure, Compile, Build Image, and Run Image')
+    parser.add_argument('--container', dest='KContainer', default=None, help='Use a docker container for running build and configuration.')
+    parser.add_argument('--alt', dest='KAltRootfs', action="store_true", help='Use a busybox rootfs')
     args = parser.parse_args()
 
     if args.KVersion is None and args.KPath is None:
@@ -202,7 +242,8 @@ if __name__ == '__main__':
     myKVersion = args.KVersion
     myKPath = args.KPath
     myKConfig = args.KConfig
-    Kb = Kbuilder(KVersion=myKVersion, KPath=myKPath, KConfig=myKConfig)
+    Kb = Kbuilder(KVersion=myKVersion, KPath=myKPath, KConfig=myKConfig,
+                  KContainer=args.KContainer, KAltRootfs=args.KAltRootfs)
 
     if args.DoAll:
         if myKPath is not None:

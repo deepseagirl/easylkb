@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from packaging.version import Version
+
 import argparse
 import subprocess
 import re
@@ -154,6 +156,13 @@ class Kbuilder:
         KConfigFile = open(self.KConfig, "r")
         ConfigFile = open(f"{self.KPath}.config", "a+") # This is the config file to write
         ConfigFile.write(KConfigFile.read())
+        
+        #Check if version is 5.12 or greater and if so add generic DWARF option (fixes issue #4)
+        if Version(self.KVersion) >=Version("5.12"):
+            self.logb("log", f"Appending DWARF debug option to {self.KPath}.config")
+            dwarf_config = "CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y"
+            ConfigFile.write(dwarf_config)
+
         ConfigFile.close()
         KConfigFile.close()
 

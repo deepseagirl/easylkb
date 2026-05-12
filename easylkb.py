@@ -107,7 +107,7 @@ class Kbuilder:
                 return retcode
     def KDownload(self):
         if self.KVersion: # This means we're downloading a mainline kernel
-            version_checker = r"^([3-6])\.\d+(?:\.\d+)?$" # support major versions 3,4,5,6
+            version_checker = r"^([3-7])\.\d+(?:\.\d+)?$" # support major versions 3,4,5,6,7
             version = re.match(version_checker, self.KVersion)
             if not version:
                 self.logb("fail","Invalid or unsupported kernel version!")
